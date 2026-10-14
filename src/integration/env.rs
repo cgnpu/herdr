@@ -24,6 +24,7 @@ pub(crate) const GROK_CONFIG_DIR_ENV_VAR: &str = "GROK_CONFIG_DIR";
 /// `$GROK_HOME/config.toml` and `$GROK_HOME/auth.json`).
 pub(crate) const GROK_HOME_ENV_VAR: &str = "GROK_HOME";
 pub(crate) const HERMES_HOME_ENV_VAR: &str = "HERMES_HOME";
+pub(crate) const CODEBUDDY_HOME_ENV_VAR: &str = "CODEBUDDY_HOME";
 
 pub(crate) fn apply_pane_base_env(cmd: &mut CommandBuilder) {
     cmd.env(crate::api::SOCKET_PATH_ENV_VAR, crate::api::socket_path());
@@ -69,6 +70,12 @@ pub(crate) fn kimi_dir() -> io::Result<PathBuf> {
 
 pub(crate) fn copilot_dir() -> io::Result<PathBuf> {
     config_dir_from_env_or_home(COPILOT_HOME_ENV_VAR, &[".copilot"])
+}
+
+/// CodeBuddy Code (the Tencent WorkBuddy CLI, `codebuddy` / `cbc`) keeps its
+/// user config at `~/.codebuddy` (hooks dir `~/.codebuddy/hooks`).
+pub(crate) fn codebuddy_dir() -> io::Result<PathBuf> {
+    config_dir_from_env_or_home(CODEBUDDY_HOME_ENV_VAR, &[".codebuddy"])
 }
 
 pub(crate) fn devin_dir() -> io::Result<PathBuf> {

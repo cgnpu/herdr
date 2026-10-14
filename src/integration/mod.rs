@@ -61,6 +61,17 @@ const CODEX_HOOK_ASSET: &str = if cfg!(windows) {
     include_str!("assets/codex/herdr-agent-state.sh")
 };
 const CODEX_INTEGRATION_VERSION: u32 = 9;
+const WORKBUDDY_HOOK_INSTALL_NAME: &str = if cfg!(windows) {
+    "herdr-agent-state.ps1"
+} else {
+    "herdr-agent-state.sh"
+};
+const WORKBUDDY_HOOK_ASSET: &str = if cfg!(windows) {
+    include_str!("assets/workbuddy/herdr-agent-state.ps1")
+} else {
+    include_str!("assets/workbuddy/herdr-agent-state.sh")
+};
+const WORKBUDDY_INTEGRATION_VERSION: u32 = 1;
 const KIMI_HOOK_INSTALL_NAME: &str = if cfg!(windows) {
     "herdr-agent-state.ps1"
 } else {

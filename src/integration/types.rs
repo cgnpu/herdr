@@ -291,3 +291,17 @@ pub(crate) struct AntigravityCliUninstallResult {
     pub removed_hook_file: bool,
     pub updated_hooks: bool,
 }
+
+#[derive(Debug)]
+pub(crate) struct WorkbuddyInstallPaths {
+    pub hook_path: PathBuf,
+    pub hooks_path: PathBuf,
+}
+
+#[derive(Debug)]
+pub(crate) struct WorkbuddyUninstallResult {
+    pub hook_path: PathBuf,
+    pub hooks_path: PathBuf,
+    pub removed_hook_file: bool,
+    pub updated_hooks: bool,
+}

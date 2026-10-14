@@ -21,9 +21,10 @@ use super::config_edit::{
 };
 use super::config_file::{check_config_targets, write_config};
 use super::env::{
-    antigravity_cli_dir, claude_dir, codex_dir, copilot_dir, cursor_dir, devin_dir, droid_dir,
-    grok_dir, hermes_dir, hermes_plugin_dir, kilo_dir, kimi_dir, letta_dir, mastracode_dir,
-    omp_extension_dir, opencode_dir, opencode_state_dir, pi_extension_dir, qodercli_dir, qwen_dir,
+    antigravity_cli_dir, claude_dir, codebuddy_dir, codex_dir, copilot_dir, cursor_dir, devin_dir,
+    droid_dir, grok_dir, hermes_dir, hermes_plugin_dir, kilo_dir, kimi_dir, letta_dir,
+    mastracode_dir, omp_extension_dir, opencode_dir, opencode_state_dir, pi_extension_dir,
+    qodercli_dir, qwen_dir,
 };
 use super::file_ops::{
     make_executable, remove_dir_all_if_exists, remove_file_if_exists, remove_legacy_bash_hook_file,
@@ -42,6 +43,7 @@ use super::types::{
     LettaUninstallResult, MastracodeInstallPaths, MastracodeUninstallResult, OmpInstallPaths,
     OmpUninstallResult, OpenCodeInstallPaths, OpenCodeUninstallResult, PiUninstallResult,
     QodercliInstallPaths, QodercliUninstallResult, QwenInstallPaths, QwenUninstallResult,
+    WorkbuddyInstallPaths, WorkbuddyUninstallResult,
 };
 use super::{
     ANTIGRAVITY_CLI_HOOK_ASSET, ANTIGRAVITY_CLI_HOOK_BLOCK_NAME, ANTIGRAVITY_CLI_HOOK_EVENTS,
@@ -61,7 +63,8 @@ use super::{
     OPENCODE_PLUGIN_INSTALL_NAME, OPENCODE_TUI_PLUGIN_ASSET, OPENCODE_TUI_PLUGIN_INSTALL_NAME,
     OPENCODE_TUI_PLUGIN_SPEC, PI_EXTENSION_ASSET, PI_EXTENSION_INSTALL_NAME, QODERCLI_HOOK_ASSET,
     QODERCLI_HOOK_EVENTS, QODERCLI_HOOK_INSTALL_NAME, QODERCLI_REMOVED_LIFECYCLE_HOOK_EVENTS,
-    QWEN_HOOK_ASSET, QWEN_HOOK_EVENTS, QWEN_HOOK_INSTALL_NAME,
+    QWEN_HOOK_ASSET, QWEN_HOOK_EVENTS, QWEN_HOOK_INSTALL_NAME, WORKBUDDY_HOOK_ASSET,
+    WORKBUDDY_HOOK_INSTALL_NAME,
 };
 
 fn ensure_extension_dir(dir: &Path, agent: &str) -> io::Result<()> {
@@ -231,6 +234,70 @@ pub(crate) fn install_codex() -> io::Result<CodexInstallPaths> {
         hook_path,
         hooks_path,
         config_path,
+    })
+}
+
+pub(crate) fn install_workbuddy() -> io::Result<WorkbuddyInstallPaths> {
+    let dir = codebuddy_dir()?;
+    if !dir.is_dir() {
+        return Err(io::Error::other(format!(
+            "codebuddy config directory not found at {}. install CodeBuddy (WorkBuddy) first",
+            dir.display()
+        )));
+    }
+
+    let hooks_dir = dir.join("hooks");
+    fs::create_dir_all(&hooks_dir)?;
+    check_config_targets(&hooks_dir, &["hooks.json"])?;
+
+    let hook_path = hooks_dir.join(WORKBUDDY_HOOK_INSTALL_NAME);
+    fs::write(&hook_path, WORKBUDDY_HOOK_ASSET)?;
+    make_executable(&hook_path)?;
+
+    let hooks_path = hooks_dir.join("hooks.json");
+    let mut hooks_file = if hooks_path.is_file() {
+        serde_json::from_str::<Value>(&fs::read_to_string(&hooks_path)?).map_err(|err| {
+            io::Error::other(format!("failed to parse {}: {err}", hooks_path.display()))
+        })?
+    } else {
+        json!({})
+    };
+
+    let hooks = ensure_hooks_object(
+        &mut hooks_file,
+        &hooks_path,
+        "codebuddy hooks file",
+        "codebuddy hooks file hooks",
+    )?;
+    remove_hook_commands(hooks, "SessionStart", &hook_path, Some("session"))?;
+    remove_hook_commands(hooks, "UserPromptSubmit", &hook_path, Some("working"))?;
+    remove_hook_commands(hooks, "Stop", &hook_path, Some("idle"))?;
+    remove_hook_commands(hooks, "Interrupt", &hook_path, Some("idle"))?;
+    remove_hook_commands(hooks, "PreToolUse", &hook_path, Some("working"))?;
+    remove_hook_commands(hooks, "PermissionRequest", &hook_path, Some("blocked"))?;
+    ensure_command_hook(
+        hooks,
+        "SessionStart",
+        hook_command(&hook_path, Some("session")),
+        10,
+        None,
+    )?;
+    for (event, action) in [
+        ("UserPromptSubmit", "working"),
+        ("Stop", "idle"),
+        ("Interrupt", "idle"),
+        ("PreToolUse", "working"),
+        ("PermissionRequest", "blocked"),
+    ] {
+        ensure_command_hook(hooks, event, hook_command(&hook_path, Some(action)), 10, None)?;
+    }
+    remove_legacy_bash_hook_file(&hook_path)?;
+
+    write_config(&hooks_path, serde_json::to_string_pretty(&hooks_file)?)?;
+
+    Ok(WorkbuddyInstallPaths {
+        hook_path,
+        hooks_path,
     })
 }
 
@@ -657,6 +724,55 @@ pub(crate) fn uninstall_codex() -> io::Result<CodexUninstallResult> {
         hook_path,
         hooks_path,
         config_path,
+        removed_hook_file,
+        updated_hooks,
+    })
+}
+
+pub(crate) fn uninstall_workbuddy() -> io::Result<WorkbuddyUninstallResult> {
+    let dir = codebuddy_dir()?;
+    let hooks_dir = dir.join("hooks");
+    check_config_targets(&hooks_dir, &["hooks.json"])?;
+    let hook_path = hooks_dir.join(WORKBUDDY_HOOK_INSTALL_NAME);
+    let hooks_path = hooks_dir.join("hooks.json");
+    let mut updated_hooks = false;
+
+    if hooks_path.is_file() {
+        let mut hooks_file = serde_json::from_str::<Value>(&fs::read_to_string(&hooks_path)?)
+            .map_err(|err| {
+                io::Error::other(format!("failed to parse {}: {err}", hooks_path.display()))
+            })?;
+
+        if let Some(hooks) = hooks_object_if_present(
+            &mut hooks_file,
+            &hooks_path,
+            "codebuddy hooks file",
+            "codebuddy hooks file hooks",
+        )? {
+            updated_hooks |=
+                remove_hook_commands(hooks, "SessionStart", &hook_path, Some("session"))?;
+            updated_hooks |=
+                remove_hook_commands(hooks, "UserPromptSubmit", &hook_path, Some("working"))?;
+            updated_hooks |=
+                remove_hook_commands(hooks, "PreToolUse", &hook_path, Some("working"))?;
+            updated_hooks |=
+                remove_hook_commands(hooks, "PermissionRequest", &hook_path, Some("blocked"))?;
+            updated_hooks |= remove_hook_commands(hooks, "Stop", &hook_path, Some("idle"))?;
+            updated_hooks |=
+                remove_hook_commands(hooks, "Interrupt", &hook_path, Some("idle"))?;
+        }
+
+        if updated_hooks {
+            write_config(&hooks_path, serde_json::to_string_pretty(&hooks_file)?)?;
+        }
+    }
+
+    let removed_hook_file =
+        remove_file_if_exists(&hook_path)? | remove_legacy_bash_hook_file(&hook_path)?;
+
+    Ok(WorkbuddyUninstallResult {
+        hook_path,
+        hooks_path,
         removed_hook_file,
         updated_hooks,
     })

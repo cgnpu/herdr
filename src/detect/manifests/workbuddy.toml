@@ -1,0 +1,88 @@
+id = "workbuddy"
+version = "2026.10.12.1"
+min_engine_version = 2
+updated_at = "2026-10-12T00:00:00Z"
+aliases = ["codebuddy", "cbc", "work-buddy"]
+
+# CodeBuddy Code (the Tencent WorkBuddy CLI, `codebuddy` / `cbc`) reuses the
+# Claude-family terminal chrome: Braille / half-circle spinners, a `❯` input
+# prompt, and an "(esc) to interrupt" hint while working. Permission gating is
+# the key blocked signal and uses keyed prompts in both locales:
+#   zh: "<tool> 可以吗？(y=允许 | n=拒绝 | a=总是允许)"
+#       plan mode: "(y=执行 | n=继续规划 | q=退出计划模式)"
+#   en: "<tool> Do you want to proceed?"
+#
+# This is the initial screen-manifest adaptation. Exact bottom-bar formatting,
+# the OSC-title payload, and the idle prompt chrome should be calibrated with
+# the herdr manifest hot-reload loop against a live CodeBuddy session (see
+# AGENTS.md "Agent Detection Updates"): capture `herdr agent read` / `explain`
+# in working, blocked, and idle states and adjust the rules below.
+
+# --- blocked -----------------------------------------------------------------
+
+# zh tool permission confirm (invariant keyed prompt).
+[[rules]]
+id = "tool_permission_confirm_zh"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["(y=允许 | n=拒绝 | a=总是允许)", "可以吗？"]
+
+# zh plan-mode exit confirm.
+[[rules]]
+id = "plan_mode_confirm_zh"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["(y=执行 | n=继续规划 | q=退出计划模式)"]
+
+# en tool permission confirm (Claude-style wording).
+[[rules]]
+id = "tool_permission_confirm_en"
+state = "blocked"
+priority = 990
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["Do you want to proceed?"]
+
+# --- working ----------------------------------------------------------------
+
+# Spinner-led line (Braille or half-circle frames). CodeBuddy keeps a working
+# indicator while responding; match a spinner-led bottom line conservatively.
+[[rules]]
+id = "spinner_working"
+state = "working"
+priority = 950
+region = "bottom_non_empty_lines(12)"
+visible_working = true
+line_regex = ['^\s*[\x{2800}-\x{28FF}\x{25D0}-\x{25D3}][^\n]*']
+
+# "(esc) to interrupt" status hint while working.
+[[rules]]
+id = "interrupt_hint_working"
+state = "working"
+priority = 900
+region = "bottom_non_empty_lines(12)"
+visible_working = true
+any = [
+  { line_regex = ['(?i)\(?esc(?: to interrupt| 中断|\(中断)\)?'] },
+  { line_regex = ['(?i)\besc to interrupt\b'] },
+]
+
+# --- idle -------------------------------------------------------------------
+
+# CodeBuddy input prompt marker (Claude-style `❯`), with no blocker hint nearby.
+[[rules]]
+id = "prompt_box_idle"
+state = "idle"
+priority = 400
+region = "bottom_non_empty_lines(12)"
+visible_idle = true
+line_regex = ['^\s*❯']
+not = [
+  { contains = ["可以吗？"] },
+  { contains = ["Do you want to proceed?"] },
+  { contains = ["esc to interrupt"] },
+]
